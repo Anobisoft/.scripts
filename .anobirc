@@ -1,5 +1,9 @@
 tabs -4
+
 export TIME_STYLE="long-iso"
+
+# Enable strict automatic PATH deduplication
+typeset -U path PATH
 
 # Prompt
 source $HOME/.scripts/.prompt
