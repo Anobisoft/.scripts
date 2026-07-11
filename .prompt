@@ -6,21 +6,35 @@ TRAPALRM() {
 # Переключаем zsh в режим динамического вычисления переменных в промпте
 setopt PROMPT_SUBST
 
-# Инициализация SSH (выполняется строго один раз при старте шелла)
 if [ -n "$SSH_CONNECTION" ]; then
     SSH_HOST='%F{087}%n%f@%F{cyan}%m '
 else
     SSH_HOST=''
 fi
 
-# Настройка отображения Git (ваши цвета, ветка уйдёт направо)
-ZSH_THEME_GIT_PROMPT_PREFIX="%{$fg[blue]%}git%{$reset_color%}:%{$fg[green]%}"
-ZSH_THEME_GIT_PROMPT_SUFFIX="%{$reset_color%}"
-ZSH_THEME_GIT_PROMPT_DIRTY="%{$fg[yellow]%}*%{$reset_color%}"
-ZSH_THEME_GIT_PROMPT_CLEAN=""
+PROMPT_DEFAULT="$SSH_HOST%F{green}%D{%Y-%m-%d} %F{084}%T %F{blue}%1~ %F{red}%#%f "
 
-# ЛЕВЫЙ ПРОМПТ: ваши цвета, дата, точное время %T и знак %# (без инфо о Git)
-PROMPT='$SSH_HOST%F{green}%D{%Y-%m-%d} %F{084}%T %F{blue}%1~ %F{red}%#%f '
+autoload -Uz vcs_info
 
-# ПРАВЫЙ ПРОМПТ: информация о ветке Git теперь живет здесь
-RPROMPT="\$(git_prompt_info)"
+zstyle ':vcs_info:git:*' check-for-changes true
+zstyle ':vcs_info:git:*' get-revision true
+zstyle ':vcs_info:git:*' unstagedstr '%F{red}*%f'
+zstyle ':vcs_info:git:*' stagedstr '%F{yellow}+%f'
+
+zstyle ':vcs_info:git:*' formats "%F{red}%r%f/%F{blue}%S%f %F{green}%b %f[%F{yellow}%7.7i%f]%u%c%f"
+zstyle ':vcs_info:git:*' actionformats "%F{red}%r%f/%F{blue}%S%f %F{green}%b %f[%F{yellow}%7.7i%f]%u%c%f %F{red}%a%f"
+
+set_dynamic_prompts() {
+    vcs_info
+
+    if [ -n "$vcs_info_msg_0_" ]; then
+        PROMPT="$SSH_HOST%F{cyan}%f ${vcs_info_msg_0_} %f> "
+        RPROMPT="%F{green}%D{%Y-%m-%d} %F{084}%T"
+    else
+        PROMPT="$PROMPT_DEFAULT"
+        RPROMPT=""
+    fi
+}
+
+precmd_functions+=(set_dynamic_prompts)
+

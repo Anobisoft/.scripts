@@ -75,6 +75,7 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
     brew update
     brew install zsh gawk diffutils wget coreutils findutils grep gnu-sed binutils curl
     BREW_PREFIX=$(brew --prefix)
+    brew install --cask font-jetbrains-mono-nerd-font
 
     # Генерируем пути экспорта для активации GNU утилит БЕЗ префикса 'g'
     GNU_PATHS=""
@@ -92,6 +93,26 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
     fi
 
 elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    FONT_DIR="$HOME/.local/share/fonts/JetBrainsMono"
+    if [ ! -d "$FONT_DIR" ]; then
+        echo "Installing JetBrainsMono Nerd Font for Linux..."
+        mkdir -p "$FONT_DIR"
+
+        # Скачиваем официальный легковесный tar.xz архив последней версии шрифта
+        curl -fsSL "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.tar.xz" -o "/tmp/JetBrainsMono.tar.xz"
+
+        # Распаковываем его в локальную папку шрифтов пользователя
+        tar -xf "/tmp/JetBrainsMono.tar.xz" -C "$FONT_DIR"
+        rm -f "/tmp/JetBrainsMono.tar.xz"
+
+        # Обновляем кэш шрифтов в Linux, чтобы система его сразу увидела
+        if command -v fc-cache &> /dev/null; then
+            echo "Rebuilding font cache..."
+            fc-cache -fv
+        fi
+    else
+        echo "JetBrainsMono Nerd Font is already installed on Linux. Skipping."
+    fi
     # --- Linux (Ubuntu / Debian) ---
     if ! (( $+commands[zsh] )); then
         if (( $+commands[apt-get] )); then

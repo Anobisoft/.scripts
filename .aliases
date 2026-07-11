@@ -1,3 +1,6 @@
+# Server
+alias nginx_reload='sudo nginx -t && sudo systemctl reload nginx'
+
 # Colorize
 alias grep='grep --color=auto'
 alias egrep='egrep --color=auto'
