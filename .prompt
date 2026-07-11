@@ -1,3 +1,8 @@
+TMOUT=1
+TRAPALRM() {
+    zle reset-prompt
+}
+
 # Переключаем zsh в режим динамического вычисления переменных в промпте
 setopt PROMPT_SUBST
 
