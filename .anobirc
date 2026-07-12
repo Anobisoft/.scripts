@@ -11,3 +11,12 @@ source $HOME/.scripts/.prompt
 # Aliases
 source $HOME/.scripts/.aliases
 
+# Git
+if [ -d "/usr/share/zsh/functions/Completion/Unix" ]; then
+    fpath=(/usr/share/zsh/functions/Completion/Unix $fpath)
+elif (( $+commands[brew] )) && [ -d "$(brew --prefix)/share/zsh/site-functions" ]; then
+    fpath=($(brew --prefix)/share/zsh/site-functions $fpath)
+fi
+
+autoload -Uz _git
+
