@@ -52,8 +52,8 @@ done
 echo "=== Checking OS and provisions ==="
 
 if [[ "$OSTYPE" == "darwin"* ]]; then
-    # XCode config
-    $ANOBI_PATH/.xcodeconfig
+    # Config
+    $ANOBI_PATH/.config_macOS
     # --- macOS (DEPLOYING HARDCORE GNU ENVIRONMENT) ---
     if ! (( $+commands[brew] )); then
         echo "Homebrew is required but not found. Starting interactive installation..."
