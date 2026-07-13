@@ -18,5 +18,5 @@ A lightweight, cross-platform environment configuration tool for macOS and Linux
 Run the following command in your terminal to download and execute the script interactively:
 
 ```bash
-bash <(\curl -sSL https://raw.githubusercontent.com/Anobisoft/.scripts/main/.install) "$HOME/.scripts" && exit 0
+bash <(\curl -sSL https://raw.githubusercontent.com/Anobisoft/.scripts/main/.install) "$HOME/.scripts"
 ```
