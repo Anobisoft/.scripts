@@ -195,7 +195,7 @@ fi
 # ==============================================================================
 
 # Вызов внешнего скрипта/функции тонкой настройки конфигурации Git
-"$ANOBI_PATH/once/config_git"
+"$ANOBI_PATH/tweaks/git"
 
 # Финальное сообщение об успешном завершении развертывания среды
 echo "🎉 [SUCCESS] Anobisoft environment installation is fully complete!"
