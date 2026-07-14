@@ -1,7 +1,13 @@
+# ==============================================================================
+# === Anobisoft cURL Request Templates & Network Profiling                  ===
+# ==============================================================================
 
+# --- 1. Стандартные HTTP-заголовки для работы с JSON API ---
 export HEADER_CONTENT_JSON='Content-type: application/json; charset=utf-8'
 export HEADER_ACCEPT_JSON='Accept: application/json; charset=utf-8'
 
+# --- 2. Шаблон форматирования метрик производительности (Тайминги) ---
+# Использует встроенные переменные curl (-w) для построчного вывода этапов запроса
 export CURL_WOUT_FORMAT_TIMINGS='\n
     time_namelookup:  %{time_namelookup}\n
        time_connect:  %{time_connect}\n
@@ -12,6 +18,11 @@ export CURL_WOUT_FORMAT_TIMINGS='\n
                     ----------\n
          time_total:  %{time_total}\n'
 
+# --- 3. Алиасы для быстрой отладки и выполнения запросов ---
+# curlog: Безопасный, подробный (-v) запрос с игнорированием SSL (-k), поддержкой редиректов (-L),
+#         JSON-заголовками и выводом полной статистики по времени выполнения.
 alias curlog='curl -vskL -w"$CURL_WOUT_FORMAT_TIMINGS" -H "$HEADER_CONTENT_JSON" -H "$HEADER_ACCEPT_JSON"'
-alias curlapi='curlog -H "Authorization: $HEADER_TOKEN"'
 
+# curlapi: Обертка над curlog, которая автоматически подставляет заголовок авторизации.
+# Важно: Переменная $HEADER_TOKEN должна вычисляться динамически в момент вызова алиаса.
+alias curlapi='curlog -H "Authorization: $HEADER_TOKEN"'

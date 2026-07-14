@@ -1,0 +1,39 @@
+#!/bin/bash
+# ==============================================================================
+# === Anobisoft macOS System & Xcode Environment Tweaks                      ===
+# ==============================================================================
+
+echo "Applying macOS system and Xcode defaults..."
+
+# --- 1. Твики среды разработки Xcode ---
+# Принудительно устанавливаем ISO-формат даты (ГГГГ-ММ-ДД) для логов и системных строк Xcode
+defaults write com.apple.dt.xcode AppleICUDateFormatStrings '{ 1 = "yyyy-MM-dd"; }'
+
+# Включаем боковую панель фолдинга (сворачивания блоков кода) в текстовом редакторе Xcode
+defaults write com.apple.dt.Xcode DVTTextShowFoldingSidebar -bool true
+
+# Автоматически удалять хвостовые пробелы (trailing whitespace) при сохранении файлов кода
+defaults write com.apple.dt.Xcode DVTTextEditorTrimTrailingWhitespace -bool true
+
+# Автоматически очищать пробелы в абсолютно пустых строках при сохранении
+defaults write com.apple.dt.Xcode DVTTextEditorTrimWhitespaceOnlyLines -bool true
+
+# --- 2. Сетевые хранилища и съемные диски (DesktopServices) ---
+# Запрещаем Finder автоматически создавать скрытые мусорные файлы .DS_Store на сетевых дисках
+defaults write com.apple.desktopservices DSDontWriteNetworkStores -bool true
+
+# Запрещаем Finder автоматически создавать скрытые файлы .DS_Store на USB-флешках и внешних дисках
+defaults write com.apple.desktopservices DSDontWriteUSBStores -bool true
+
+# --- 3. Настройка файлового менеджера Finder ---
+# Включаем постоянное отображение панели пути (Path Bar) в нижней части окон Finder
+defaults write com.apple.finder ShowPathbar -bool true
+
+# Отключаем назойливое предупреждение при изменении расширения файла (например, из .txt в .sh)
+defaults write com.apple.finder FXEnableExtensionChangeWarning -bool false
+
+echo "🎉 macOS defaults applied successfully!"
+
+# Принудительно перезапускаем кэш настроек и Finder для мгновенного применения твиков
+killall cfprefsd 2>/dev/null || true
+killall Finder 2>/dev/null || true

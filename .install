@@ -1,20 +1,29 @@
 #!/bin/bash
-# Exit immediately if a command exits with a non-zero status
+# Автоматический скрипт настройки окружения Anobisoft
+# Поддерживаемые ОС: macOS (с Homebrew) и Linux (Debian/Ubuntu, Fedora, Arch)
+
+# Экстренное завершение работы скрипта, если любая из команд вернет ошибку (non-zero status)
 set -e
 
 
+# ==============================================================================
+# === 1. КЛОНИРОВАНИЕ ИЛИ ОБНОВЛЕНИЕ РЕПОЗИТОРИЯ СКРИПТОВ                    ===
+# ==============================================================================
 
-# === 1. CLONING SCRIPTS REPOSITORY ===
-
+# Задаем путь установки: берем из первого аргумента скрипта $1, либо по умолчанию $HOME/.scripts
 ANOBI_PATH="${1:-$HOME/.scripts}"
 
 while true; do
+    # Если директория уже существует, проверяем, является ли она целевым репозиторием
     if [ -d "$ANOBI_PATH" ]; then
         REPO_URL=$(cd "$ANOBI_PATH" && git remote get-url origin 2>/dev/null || echo "")
+        
+        # Валидация репозитория по названию организации/пользователя Anobisoft
         if [[ "$REPO_URL" == *Anobisoft* ]]; then
             echo "Valid Anobisoft repository detected at '$ANOBI_PATH'. Updating..."
             (
                 cd "$ANOBI_PATH"
+                # Если обнаружены локальные незакоммиченные изменения, временно прячем их в stash
                 if [ -n "$(git status --porcelain)" ]; then
                     echo "📦 Local changes detected! Running 'git stash' to save your work temporarily..."
                     git stash
@@ -24,15 +33,19 @@ while true; do
                 git checkout main 2>/dev/null || git checkout master
                 echo "📥 Pulling latest updates from GitHub..."
                 git pull
+                # Возвращаем локальные изменения из stash, если они сохранялись
                 if [ "$HAS_STASH" = true ]; then
                     echo "🎁 Restoring your saved local changes via 'git stash pop'..."
-                    git stash pop 2>/dev/null || echo "⚠️ Warning: Could not restore stash automatically."
+                    git stash pop || echo "⚠️ Warning: Could not restore stash automatically."
                 fi
             )
             break
         else
-            echo -e "⚠️ Error: Directory '$ANOBI_PATH' exists but is NOT an Anobisoft repository!\nPlease enter another path:"
+            # Обработка ситуации, когда папка занята сторонними файлами или чужим репозиторием
+            echo "⚠️ Error: Directory '$ANOBI_PATH' exists but is NOT an Anobisoft repository!"
+            echo "Please enter another path:"
             read -r MANUAL_PATH
+            # Если введен относительный путь, преобразуем его в абсолютный относительно $HOME
             if [[ "$MANUAL_PATH" != /* ]]; then
                 ANOBI_PATH="$HOME/$MANUAL_PATH"
             else
@@ -40,88 +53,109 @@ while true; do
             fi
         fi
     else
+        # Если папка отсутствует, выполняем чистое клонирование репозитория
         echo "Cloning Anobisoft scripts repository into $ANOBI_PATH..."
-        git clone https://github.com/Anobisoft/.scripts "$ANOBI_PATH"
+        git clone https://github.com "$ANOBI_PATH"
         break
     fi
 done
 
+# Получаем короткий хэш текущего коммита HEAD из репозитория скриптов
+ANOBI_REV=$(cd "$ANOBI_PATH" && git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 
 
-# === 2. DETECTING OS AND INSTALLING SOFTWARE ===
+# ==============================================================================
+# === 2. ОПРЕДЕЛЕНИЕ ОПЕРАЦИОННОЙ СИСТЕМЫ И УСТАНОВКА ПО                    ===
+# ==============================================================================
 echo "=== Checking OS and provisions ==="
 
 if [[ "$OSTYPE" == "darwin"* ]]; then
-    # Config
-    $ANOBI_PATH/.config_macOS
-    # --- macOS (DEPLOYING HARDCORE GNU ENVIRONMENT) ---
-    if ! command -v brew &> /dev/null; then
+    # --- Конфигурация для macOS ---
+    
+    # Запуск специфичных для macOS начальных твиков системы
+    $ANOBI_PATH/once/config_macOS
+    
+    # Автоматическая интерактивная установка пакетного менеджера Homebrew
+    if ! command -v brew &>/dev/null; then
         echo "Homebrew is required but not found. Starting interactive installation..."
-        set +e
-        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+        set +e # Временно отключаем 'set -e', так как скрипт Homebrew может завершиться с ошибкой
+        /bin/bash -c "$(curl -fsSL https://githubusercontent.com)"
+        
+        # Инициализация окружения Homebrew в текущей сессии установщика (поддержка Apple Silicon и Intel)
         if [ -f /opt/homebrew/bin/brew ]; then
             eval "$(/opt/homebrew/bin/brew shellenv)"
         elif [ -f /usr/local/bin/brew ]; then
             eval "$(/usr/local/bin/brew shellenv)"
         fi
-        set -e
-        if ! command -v brew &> /dev/null; then
+        set -e # Возвращаем строгий режим обработки ошибок
+        
+        if ! command -v brew &>/dev/null; then
             echo "Error: Homebrew installation failed." >&2
             exit 1
         fi
     fi
-    
+
+    # Установка полноценного GNU-окружения и Zsh поверх стандартных утилит BSD в macOS
     echo "Installing complete GNU Toolset and Zsh via Homebrew..."
     brew update
     brew install zsh gawk diffutils wget coreutils findutils grep gnu-sed binutils curl
     BREW_PREFIX=$(brew --prefix)
     brew install --cask font-jetbrains-mono-nerd-font
 
-    # Генерируем пути экспорта для активации GNU утилит БЕЗ префикса 'g'
+    # Динамическая генерация путей PATH для активации GNU-утилит БЕЗ дефолтного префикса 'g' (например, sed вместо gsed)
     GNU_PATHS=""
+    GNU_PATHS_ARR=()
     for pkg in coreutils findutils gnu-sed grep gawk diffutils binutils; do
+        PKG_PATH=
         if [ -d "$BREW_PREFIX/opt/$pkg/libexec/gnubin" ]; then
-            GNU_PATHS="$BREW_PREFIX/opt/$pkg/libexec/gnubin:$GNU_PATHS"
+            PKG_PATH="$BREW_PREFIX/opt/$pkg/libexec/gnubin"
+            
         elif [ -d "$BREW_PREFIX/opt/$pkg/bin" ]; then
-            GNU_PATHS="$BREW_PREFIX/opt/$pkg/bin:$GNU_PATHS"
+            PKG_PATH="$BREW_PREFIX/opt/$pkg/bin"
         fi
+        if [ -z "$PKG_PATH" ]; then continue; fi
+        GNU_PATHS="$PKG_PATH:$GNU_PATHS"
+        GNU_PATHS_ARR+=("$PKG_PATH")
     done
 
+    # Экспортируем пути GNU-утилит в начало PATH, чтобы текущий процесс установки использовал именно их
     if [ -n "$GNU_PATHS" ]; then
         export PATH="$GNU_PATHS$PATH"
         echo "GNU toolchain activated for the current installation process."
     fi
 
 elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    # --- Конфигурация для Linux (Ubuntu / Debian / Fedora / Arch) ---
+    
+    # Установка шрифта JetBrainsMono Nerd Font (только для локальных GUI-сессий, пропускается для SSH)
     FONT_DIR="$HOME/.local/share/fonts/JetBrainsMono"
-    if [ ! -d "$FONT_DIR" ]; then
+    if [ -z "$SSH_CONNECTION" ] && [ ! -d "$FONT_DIR" ]; then
         echo "Installing JetBrainsMono Nerd Font for Linux..."
         mkdir -p "$FONT_DIR"
 
         # Скачиваем официальный легковесный tar.xz архив последней версии шрифта
-        curl -fsSL "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.tar.xz" -o "/tmp/JetBrainsMono.tar.xz"
+        curl -fsSL "https://github.com" -o "/tmp/JetBrainsMono.tar.xz"
 
         # Распаковываем его в локальную папку шрифтов пользователя
         tar -xf "/tmp/JetBrainsMono.tar.xz" -C "$FONT_DIR"
         rm -f "/tmp/JetBrainsMono.tar.xz"
 
         # Обновляем кэш шрифтов в Linux, чтобы система его сразу увидела
-        if command -v fc-cache &> /dev/null; then
+        if command -v fc-cache &>/dev/null; then
             echo "Rebuilding font cache..."
             fc-cache -fv
         fi
-    else
-        echo "JetBrainsMono Nerd Font is already installed on Linux. Skipping."
     fi
-    # --- Linux (Ubuntu / Debian) ---
-    if ! command -v zsh &> /dev/null; then
-        if command -v apt-get &> /dev/null; then
+
+    # Автоматическая установка Zsh через доступный пакетный менеджер дистрибутива
+    if ! command -v zsh &>/dev/null; then
+        if command -v apt-get &>/dev/null; then
             echo "Updating apt repositories and installing Zsh..."
             sudo apt-get update
             sudo apt-get install -y zsh
-        elif command -v dnf &> /dev/null; then
+        elif command -v dnf &>/dev/null; then
             sudo dnf install -y zsh
-        elif command -v pacman &> /dev/null; then
+        elif command -v pacman &>/dev/null; then
             sudo pacman -S --noconfirm zsh
         else
             echo "Error: Unknown Linux distribution. Please install Zsh manually." >&2
@@ -129,14 +163,17 @@ elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
         fi
     fi
 else
+    # Прерываем установку, если ОС не является macOS или Linux
     echo "Error: Unsupported OS type: $OSTYPE" >&2
     exit 1
 fi
 
 
+# ==============================================================================
+# === 3. СМЕНА СИСТЕМНОЙ ОБОЛОЧКИ ПО УМОЛЧАНИЮ НА ZSH                        ===
+# ==============================================================================
 
-# === 3. CHANGING DEFAULT SHELL ===
-
+# Вычисляем целевой путь к Zsh и текущий shell пользователя в зависимости от ОС
 if [[ "$OSTYPE" == "darwin"* ]]; then
     ZSH_PATH="$(brew --prefix)/bin/zsh"
     CURRENT_SYSTEM_SHELL=$(dscl . -read "/Users/$USER" UserShell 2>/dev/null | awk '{print $2}')
@@ -145,39 +182,44 @@ else
     CURRENT_SYSTEM_SHELL=$(getent passwd "$USER" | cut -d: -f7)
 fi
 
+# Если текущий шелл отличается от установленного Zsh, производим смену
 if [ "$CURRENT_SYSTEM_SHELL" != "$ZSH_PATH" ]; then
     echo "Changing default shell from $CURRENT_SYSTEM_SHELL to $ZSH_PATH..."
-    
-    set +e
-    
+
+    set +e # Временно отключаем прерывание, чтобы корректно обработать возможный сбой chsh
+
+    # Для macOS: если бинарник Zsh от Homebrew отсутствует в списке доверенных оболочек, добавляем его туда
     if [[ "$OSTYPE" == "darwin"* ]] && ! grep -q "$ZSH_PATH" /etc/shells; then
         echo "Adding $ZSH_PATH to /etc/shells trusted list (requires sudo)..."
         echo "$ZSH_PATH" | sudo tee -a /etc/shells >/dev/null
     fi
-    
+
+    # Меняем шелл по умолчанию для текущего пользователя
     sudo chsh -s "$ZSH_PATH" "$USER"
-    
+
     if [ $? -eq 0 ]; then
         echo "🎉 Shell successfully changed to $ZSH_PATH!"
     else
         echo "⚠️ Warning: Shell change failed. You can do it manually later."
     fi
-    
-    set -e
+
+    set -e # Возвращаем строгий режим ошибок
 else
     echo "Zsh ($ZSH_PATH) is already configured as your default system shell. Skipping."
 fi
 
 
-
-# === 4. INSTALLING ZSH PLUGINS ===
+# ==============================================================================
+# === 4. УСТАНОВКА И ОБНОВЛЕНИЕ ПЛАГИНОВ ДЛЯ ZSH                             ===
+# ==============================================================================
 
 ZSH_PLUGINS="$HOME/.zsh/plugins"
 mkdir -p "$ZSH_PLUGINS"
 
+# Функция для клонирования или восстановления плагинов с GitHub
 install_or_update_plugin() {
     local plugin_name=$1
-    local plugin_url="https://github.com/zsh-users/$1.git"
+    local plugin_url="https://github.com"
     local target_dir="$ZSH_PLUGINS/$plugin_name"
 
     if [ ! -d "$target_dir" ]; then
@@ -189,46 +231,75 @@ install_or_update_plugin() {
     fi
 }
 
+# Скачиваем/обновляем плагины автодополнения и подсветки синтаксиса
 install_or_update_plugin "zsh-autosuggestions"
 install_or_update_plugin "zsh-syntax-highlighting"
 
 echo "🎉 zsh plugins successfully prepared!"
 
 
-
-# === 5. CONFIGURING CONFIG FILES ===
+# ==============================================================================
+# === 5. РАЗВЕРТЫВАНИЕ КОНФИГУРАЦИОННЫХ ФАЙЛОВ И ТВИКИ                       ===
+# ==============================================================================
 echo "Deploying configurations..."
-cp "$ANOBI_PATH/.vimrc" "$HOME/.vimrc" || echo "No .vimrc found in repo, skipping."
 
+# Конфигурация Vim: копируем .vimrc текущему пользователю и в домашнюю директорию root
+VIMRC_SOURCE="$ANOBI_PATH/.vimrc"
+if [ -f "$VIMRC_SOURCE" ]; then
+    cp "$VIMRC_SOURCE" "$HOME"
+    set +e
+    # Копирование в root-директорию с флагом -H для гарантированного раскрытия $HOME как /var/root
+    sudo -H sh -c "cp '$VIMRC_SOURCE' \$HOME"
+    set -e
+else
+    echo "No .vimrc found in repo, skipping."
+fi
+
+# Создаем файл .zshrc, если он отсутствует в системе
 ZSHRC_FILE="$HOME/.zshrc"
 if [ ! -f "$ZSHRC_FILE" ]; then
     touch $ZSHRC_FILE
 fi
 
-if ! grep -q "source .anobirc" "$ZSHRC_FILE"; then
+# Настройка инициализации окружения Anobisoft в .zshrc
+if grep -q ".anobirc" "$ZSHRC_FILE"; then
+    # Если запись уже есть, обновляем её, заменяя путь на актуальное значение $ANOBI_PATH
+    sed -i.bak -E "s|^[[:space:]]*source[[:space:]]+([^[:space:]]*/)?\.anobirc|source $ANOBI_PATH/.anobirc|" "$ZSHRC_FILE"
+else
+    # Если записи нет, дописываем блок конфигурации в конец файла .zshrc
     {
         echo
         echo "# Anobisoft"
-        echo "path+=(\"$ANOBI_PATH\")"
-        echo "source .anobirc"
-    } >> "$ZSHRC_FILE"
+        echo "[ -d '$ANOBI_PATH/run' ] && path+=(\"$ANOBI_PATH/run\")"
+        echo "source $ANOBI_PATH/.anobirc"
+    } >>"$ZSHRC_FILE"
 fi
 
-if [ -n "$GNU_PATHS" ] && ! grep -q "libexec/gnubin" "$ZSHRC_FILE"; then
+# Для macOS: прописываем приоритет путей GNU-утилит в массиве path для Zsh
+if [ ${#GNU_PATHS_ARR[@]} -gt 0 ]; then
+    # Если блок путей уже существовал, комментируем старую версию (и комментарий, и саму строку path)
+    if grep -q "# Core GNU Toolchain paths for macOS" "$ZSHRC_FILE"; then
+        # Находим строку комментария и идущую за ней строку, после чего добавляем '#' в начало каждой
+        sed -i.bak '/^[[:space:]]*# Core GNU Toolchain paths for macOS/{N;s/^/#/;s/\n/\n#/;}' "$ZSHRC_FILE"
+    fi
+
+    # Записываем новый блок с актуальным набором путей и свежим хэшем ревизии
     {
         echo
-        echo "# Core GNU Toolchain paths for macOS"
-        echo "path=(${BREW_PREFIX}/opt/*/libexec/gnubin \$path)" 
-    } >> "$ZSHRC_FILE"
+        echo "# Core GNU Toolchain paths for macOS (rev: $ANOBI_REV)"
+        echo "path=(${GNU_PATHS_ARR[*]} \$path)"
+    } >>"$ZSHRC_FILE"
 fi
 
 
-
-# === 7. CONFIGURING GLOBAL GIT SETTINGS ===
+# ==============================================================================
+# === 6. НАСТРОЙКА ГЛОБАЛЬНЫХ ПАРАМЕТРОВ GIT                                 ===
+# ==============================================================================
 
 echo "Tuning global Git configuration..."
-.config_git
+# Вызов внешнего скрипта/функции тонкой настройки конфигурации Git
+$ANOBI_PATH/once/config_git
 
-
+# Финальное сообщение об успешном завершении развертывания среды
 echo "🎉 [SUCCESS] Anobisoft environment installation is fully complete!"
 echo "Please restart your terminal or run: source ~/.zshrc"
