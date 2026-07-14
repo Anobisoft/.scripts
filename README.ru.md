@@ -2,7 +2,7 @@
 
 ![Shell](https://img.shields.io/badge/shell-zsh%20%7C%20bash-4acc13?style=flat-square&logo=gnu-bash&logoColor=white)
 ![OS Compatible](https://img.shields.io/badge/os-macOS%20%7C%20Linux-000000?style=flat-square&logo=apple&logoColor=white)
-![GitHub release (latest by date)](img.shields.io/github/v/release/Anobisoft/.scripts?style=flat-square&color=blue)
+![GitHub release (latest by date)](https://img.shields.io/github/v/release/Anobisoft/.scripts?style=flat-square&color=blue)
 ![License](https://img.shields.io/badge/license-MIT-orange?style=flat-square)
 
 Автоматизированная система развертывания и синхронизации минималистичного, высокопроизводительного рабочего окружения на базе **Zsh** и утилит **GNU**. Полностью совместима с **macOS** и популярными дистрибутивами **Linux** (Debian/Ubuntu, Fedora, Arch).

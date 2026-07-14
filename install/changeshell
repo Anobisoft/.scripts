@@ -1,0 +1,48 @@
+#!/bin/bash
+# ==============================================================================
+# === Anobisoft Environment: Default System Shell Switcher                 ===
+# ==============================================================================
+
+# --- 1. Определение целевых путей и текущего окружения ---
+# Вычисляем целевой путь к Zsh и текущий shell пользователя в зависимости от ОС
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    # На macOS берем актуальную версию Zsh, установленную через Homebrew
+    ZSH_PATH="$(brew --prefix)/bin/zsh"
+    CURRENT_SYSTEM_SHELL=$(dscl . -read "/Users/$USER" UserShell 2>/dev/null | awk '{print $2}')
+else
+    # На Linux берем системный путь к бинарнику через which
+    ZSH_PATH=$(which zsh 2>/dev/null || true)
+    CURRENT_SYSTEM_SHELL=$(getent passwd "$USER" | cut -d: -f7)
+fi
+
+export ZSH_PATH
+
+# --- 2. Проверка необходимости переключения ---
+# Если текущий шелл уже совпадает с целевым Zsh, завершаем работу модуля
+if [ "$CURRENT_SYSTEM_SHELL" = "$ZSH_PATH" ]; then
+    echo "Zsh ($ZSH_PATH) is already configured as your default system shell. Skipping."
+    exit 0
+fi
+
+echo "Changing default shell from $CURRENT_SYSTEM_SHELL to $ZSH_PATH..."
+
+# --- 3. Интеграция и смена оболочки в системе ---
+# Временно отключаем прерывание 'set -e', чтобы корректно обработать возможный отказ chsh
+set +e
+
+# Для macOS: если свежий бинарник Zsh от Homebrew отсутствует в списке доверенных оболочек,
+# принудительно добавляем его туда, иначе chsh выдаст ошибку "invalid shell".
+if [[ "$OSTYPE" == "darwin"* ]] && ! grep -q "$ZSH_PATH" /etc/shells; then
+    echo "Adding $ZSH_PATH to /etc/shells trusted list (requires sudo)..."
+    echo "$ZSH_PATH" | sudo tee -a /etc/shells >/dev/null
+fi
+
+# Меняем шелл по умолчанию для текущего пользователя через системную утилиту chsh
+if sudo chsh -s "$ZSH_PATH" "$USER"; then
+    echo "🎉 Shell successfully changed to $ZSH_PATH!"
+else
+    echo "⚠️ Warning: Shell change failed. You can do it manually later."
+fi
+
+# Возвращаем строгий режим экстренного завершения при ошибках
+set -e

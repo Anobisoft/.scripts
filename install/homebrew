@@ -1,0 +1,44 @@
+#!/bin/bash
+# ==============================================================================
+# === Anobisoft Environment: Homebrew Standalone Installer                  ===
+# ==============================================================================
+
+# Динамически берем URL скрипта установки из первого аргумента (прокинутого из констант),
+# либо используем официальный репозиторий по умолчанию.
+readonly URL_HOMEBREW="${1:-'https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh'}"
+
+# --- 1. Проверка текущего состояния системы ---
+# Если пакетный менеджер Homebrew уже установлен и доступен в системе,
+# мгновенно завершаем работу модуля с успешным статусом.
+if command -v brew &>/dev/null; then
+    exit 0
+fi
+
+echo "Homebrew is required but not found. Starting interactive installation..."
+
+# --- 2. Интерактивная установка через дескрипторы ---
+# Временно отключаем 'set -e', так как скрипт Homebrew может выбросить внутренний warning.
+set +e
+
+# Использование Process Substitution <() создает изолированный файловый дескриптор для кода,
+# сохраняя при этом оригинальный STDIN (клавиатуру) полностью открытым и интерактивным
+# для ввода пользователем пароля sudo и нажатия Enter на всех уровнях вложенности.
+bash <(\curl -fsSL "${URL_HOMEBREW}")
+
+# --- 3. Инициализация путей окружения (Apple Silicon / Intel) ---
+# Настраиваем переменные среды Homebrew для текущей сессии инсталлятора,
+# чтобы последующие блоки скрипта (brew install) сразу смогли им пользоваться.
+if [ -f /opt/homebrew/bin/brew ]; then
+    eval "$(/opt/homebrew/bin/brew shellenv)"
+elif [ -f /usr/local/bin/brew ]; then
+    eval "$(/usr/local/bin/brew shellenv)"
+fi
+
+# Возвращаем строгий режим экстренного завершения при ошибках
+set -e
+
+# --- 4. Финальная валидация ---
+if ! command -v brew &>/dev/null; then
+    echo "Error: Homebrew installation failed." >&2
+    exit 1
+fi

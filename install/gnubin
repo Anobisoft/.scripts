@@ -1,0 +1,79 @@
+#!/bin/bash
+# ==============================================================================
+# === Anobisoft Environment: GNU Toolchain Standalone Installer             ===
+# ==============================================================================
+
+# Проверка наличия пакетного менеджера Homebrew, необходимого для работы скрипта
+if ! command -v brew &>/dev/null; then
+    echo "Error: required Homebrew not found." >&2
+    exit 1
+fi
+
+# Инициализация флагов для тихого режима Homebrew в продакшене
+if [ "$DEBUG" != true ]; then
+    BREW_FLAGS='-q'
+fi
+
+echo "Installing complete GNU Toolset and Zsh via Homebrew..."
+brew update
+
+# Установка утилит GNU и актуальной версии Zsh
+# Переменная "$BREW_FLAGS" обернута в кавычки для предотвращения word splitting и прохождения ShellCheck
+brew "$BREW_FLAGS" install zsh gawk diffutils wget coreutils findutils grep gnu-sed binutils curl
+BREW_PREFIX=$(brew --prefix)
+
+# Установка JetBrains Mono Nerd Font через Cask-репозиторий Homebrew
+brew "$BREW_FLAGS" install --cask font-jetbrains-mono-nerd-font
+
+# --- 1. Динамическая генерация путей (PATH) ---
+# Формируем список директорий для активации GNU-утилит БЕЗ дефолтного префикса 'g'
+GNU_PATHS=""
+GNU_PATHS_ARR=()
+for pkg in coreutils findutils gnu-sed grep gawk diffutils binutils; do
+    PKG_PATH=
+    if [ -d "$BREW_PREFIX/opt/$pkg/libexec/gnubin" ]; then
+        PKG_PATH="$BREW_PREFIX/opt/$pkg/libexec/gnubin"
+    elif [ -d "$BREW_PREFIX/opt/$pkg/bin" ]; then
+        PKG_PATH="$BREW_PREFIX/opt/$pkg/bin"
+    fi
+    if [ -z "$PKG_PATH" ]; then continue; fi
+    GNU_PATHS="$PKG_PATH:$GNU_PATHS"
+    GNU_PATHS_ARR+=("$PKG_PATH")
+done
+
+# Временный экспорт сгенерированных путей GNU в начало PATH текущего инсталлятора,
+# чтобы все последующие шаги развертывания использовали именно их.
+if [ -n "$GNU_PATHS" ]; then
+    export PATH="$GNU_PATHS$PATH"
+    echo "GNU toolchain activated for the current installation process."
+fi
+
+# --- 2. Подготовка и деплой путей в файл конфигурации ---
+ZSHRC_FILE="$HOME/.zshrc"
+if [ ! -f "$ZSHRC_FILE" ]; then
+    touch "$ZSHRC_FILE"
+fi
+
+# Если массив путей пуст (ни один пакет не распознан), завершаем работу модуля
+if [ ${#GNU_PATHS_ARR[@]} -eq 0 ]; then
+    exit 0
+fi
+
+GNU_TITLE="Core GNU Toolchain paths for macOS"
+
+# --- 3. Логика архивации и комментирования старых блоков ---
+# Если блок путей уже существовал, переименовываем заголовок маркера на '# [removed] ...',
+# а саму исполняемую строку path=() комментируем решеткой. Это защищает файл от бесконечного
+# раздувания одинаковыми комментариями при повторных прогонах инсталлятора.
+if grep -q "# $GNU_TITLE" "$ZSHRC_FILE"; then
+    # Шаг 1. Переименование заголовка маркера в '[removed]' и комментирование строки под ним
+    sed -i.bak '/^[[:space:]]*'"# $GNU_TITLE"'/{N;s/'"# $GNU_TITLE"'/# [removed] '"$GNU_TITLE"'/;s/\n/\n#/;}' "$ZSHRC_FILE"
+fi
+
+# --- 4. Запись актуального блока путей ---
+# Записываем новый блок с актуальным набором директорий и хэшем текущей ревизии репозитория
+{
+    echo
+    echo "# $GNU_TITLE (rev: $ANOBI_REV)"
+    echo "path=(${GNU_PATHS_ARR[*]} \$path)"
+} >>"$ZSHRC_FILE"

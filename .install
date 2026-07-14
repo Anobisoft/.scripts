@@ -7,7 +7,6 @@
 set -e
 
 # --- Глобальные константы репозитория ---
-readonly ORIG_ARG1="$1"
 readonly REPO_URL_DEFAULT="https://github.com/Anobisoft/.scripts.git"
 readonly URL_HOMEBREW="https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh"
 readonly URL_FONT_JETBRAINS="https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.tar.xz"
@@ -15,57 +14,51 @@ readonly URL_ZSH_PLUGINS_BASE="https://github.com/zsh-users/"
 
 
 # --- Инициализация переменных по умолчанию ---
-DEBUG_MODE=false
 ANOBI_PATH=""
+debuglog() { :; }
 
 # --- Разбор аргументов командной строки ---
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --debug)
-            DEBUG_MODE=true
-            shift
-            ;;
-        -*)
-            echo "⚠️ Error: Unknown option $1" >&2
+    --debug)
+        echo "Extended debugging mode activated (set -x)."
+        debuglog() {
+            echo "🔧 [DEBUG] $1 $2"
+        }
+        export DEBUG=true
+        set -x
+        # Магия Bash: отключает вывод трассировки (xtrace) персонально для функции debuglog
+        set +x debuglog 2>/dev/null || declare -f -t debuglog &>/dev/null || true
+        shift
+        ;;
+    -*)
+        echo "⚠️ Error: Unknown option $1" >&2
+        exit 1
+        ;;
+    *)
+        if [ -z "$ANOBI_PATH" ]; then
+            ANOBI_PATH="$1"
+        else
+            echo "⚠️ Error: Multiple installation paths specified" >&2
             exit 1
-            ;;
-        *)
-            if [ -z "$ANOBI_PATH" ]; then
-                ANOBI_PATH="$1"
-            else
-                echo "⚠️ Error: Multiple installation paths specified" >&2
-                exit 1
-            fi
-            shift
-            ;;
+        fi
+        shift
+        ;;
     esac
 done
 
-# Функция для вывода структурированных отладочных логов
-debuglog() {
-    if [ "$DEBUG" = true ]; then
-        echo "🔧 [DEBUG] $1 $2"
-    fi
-}
-
-# Если включен флаг --debug, активируем подробное логирование команд Bash (X-ray)
-if [ "$DEBUG_MODE" = true ]; then
-    export DEBUG=true  # Пробрасываем переменную дальше для вложенных скриптов
-    set -x
-fi
-
-debuglog "Extended debugging mode activated (set -x)."
 debuglog '$0 (Script Executable) :' "$0"
-debuglog '$1 (First Argument)    :' "${ORIG_ARG1:-[Not Specified]}"
+debuglog 'ANOBI_PATH ($1)        :' "${ANOBI_PATH:-[Not Specified]}"
 debuglog 'REPO_URL_DEFAULT       :' "$REPO_URL_DEFAULT"
-debuglog 'ANOBI_PATH (params)    :' "$ANOBI_PATH"
+debuglog 'URL_HOMEBREW           :' "$URL_HOMEBREW"
+debuglog 'URL_FONT_JETBRAINS     :' "$URL_FONT_JETBRAINS"
+debuglog 'URL_ZSH_PLUGINS_BASE   :' "$URL_ZSH_PLUGINS_BASE"
 
 # Если путь не был передан аргументом, устанавливаем дефолтное значение
 if [ -z "$ANOBI_PATH" ]; then
     ANOBI_PATH="$HOME/.scripts"
-    debuglog "ANOBI_PATH (default)   : $ANOBI_PATH"
+    debuglog "ANOBI_PATH (set default): $ANOBI_PATH"
 fi
-
 
 # ==============================================================================
 # === 1. КЛОНИРОВАНИЕ ИЛИ ОБНОВЛЕНИЕ РЕПОЗИТОРИЯ СКРИПТОВ                    ===
@@ -113,8 +106,8 @@ done
 
 # Получаем короткий хэш текущего коммита HEAD из репозитория скриптов
 ANOBI_REV=$(cd "$ANOBI_PATH" && git rev-parse --short HEAD 2>/dev/null || echo "unknown")
-debuglog 'ANOBI_REV (hash)       :' "$ANOBI_PATH"
-
+export ANOBI_REV
+debuglog 'ANOBI_REV (hash)       :' "$ANOBI_REV"
 
 # ==============================================================================
 # === 2. ОПРЕДЕЛЕНИЕ ОПЕРАЦИОННОЙ СИСТЕМЫ И УСТАНОВКА ПО                    ===
@@ -125,79 +118,18 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
     # --- Конфигурация для macOS ---
 
     # Запуск специфичных для macOS начальных твиков системы
-    "$ANOBI_PATH/once/config_macOS"
+    "$ANOBI_PATH/tweaks/macOS"
 
     # Автоматическая интерактивная установка пакетного менеджера Homebrew
-    if ! command -v brew &>/dev/null; then
-        echo "Homebrew is required but not found. Starting interactive installation..."
-        set +e # Временно отключаем 'set -e', так как скрипт Homebrew может завершиться с ошибкой
-        /bin/bash -c "$(curl -fsSL ${URL_HOMEBREW})"
-
-        # Инициализация окружения Homebrew в текущей сессии установщика (поддержка Apple Silicon и Intel)
-        if [ -f /opt/homebrew/bin/brew ]; then
-            eval "$(/opt/homebrew/bin/brew shellenv)"
-        elif [ -f /usr/local/bin/brew ]; then
-            eval "$(/usr/local/bin/brew shellenv)"
-        fi
-        set -e # Возвращаем строгий режим обработки ошибок
-
-        if ! command -v brew &>/dev/null; then
-            echo "Error: Homebrew installation failed." >&2
-            exit 1
-        fi
-    fi
+    "$ANOBI_PATH/install/homebrew" "$URL_HOMEBREW"
 
     # Установка полноценного GNU-окружения и Zsh поверх стандартных утилит BSD в macOS
-    echo "Installing complete GNU Toolset and Zsh via Homebrew..."
-    brew update
-    brew install zsh gawk diffutils wget coreutils findutils grep gnu-sed binutils curl
-    BREW_PREFIX=$(brew --prefix)
-    brew install --cask font-jetbrains-mono-nerd-font
-
-    # Динамическая генерация путей PATH для активации GNU-утилит БЕЗ дефолтного префикса 'g' (например, sed вместо gsed)
-    GNU_PATHS=""
-    GNU_PATHS_ARR=()
-    for pkg in coreutils findutils gnu-sed grep gawk diffutils binutils; do
-        PKG_PATH=
-        if [ -d "$BREW_PREFIX/opt/$pkg/libexec/gnubin" ]; then
-            PKG_PATH="$BREW_PREFIX/opt/$pkg/libexec/gnubin"
-
-        elif [ -d "$BREW_PREFIX/opt/$pkg/bin" ]; then
-            PKG_PATH="$BREW_PREFIX/opt/$pkg/bin"
-        fi
-        if [ -z "$PKG_PATH" ]; then continue; fi
-        GNU_PATHS="$PKG_PATH:$GNU_PATHS"
-        GNU_PATHS_ARR+=("$PKG_PATH")
-    done
-
-    # Экспортируем пути GNU-утилит в начало PATH, чтобы текущий процесс установки использовал именно их
-    if [ -n "$GNU_PATHS" ]; then
-        export PATH="$GNU_PATHS$PATH"
-        echo "GNU toolchain activated for the current installation process."
-    fi
+    "$ANOBI_PATH/install/gnubin"
 
 elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
     # --- Конфигурация для Linux (Ubuntu / Debian / Fedora / Arch) ---
 
-    # Установка шрифта JetBrainsMono Nerd Font (только для локальных GUI-сессий, пропускается для SSH)
-    FONT_DIR="$HOME/.local/share/fonts/JetBrainsMono"
-    if [ -z "$SSH_CONNECTION" ] && [ ! -d "$FONT_DIR" ]; then
-        echo "Installing JetBrainsMono Nerd Font for Linux..."
-        mkdir -p "$FONT_DIR"
-
-        # Скачиваем официальный легковесный tar.xz архив последней версии шрифта
-        curl -fsSL "$URL_FONT_JETBRAINS" -o "/tmp/JetBrainsMono.tar.xz"
-
-        # Распаковываем его в локальную папку шрифтов пользователя
-        tar -xf "/tmp/JetBrainsMono.tar.xz" -C "$FONT_DIR"
-        rm -f "/tmp/JetBrainsMono.tar.xz"
-
-        # Обновляем кэш шрифтов в Linux, чтобы система его сразу увидела
-        if command -v fc-cache &>/dev/null; then
-            echo "Rebuilding font cache..."
-            fc-cache -fv
-        fi
-    fi
+    "$ANOBI_PATH/install/linuxfonts" "$URL_FONT_JETBRAINS"
 
     # Автоматическая установка Zsh через доступный пакетный менеджер дистрибутива
     if ! command -v zsh &>/dev/null; then
@@ -220,97 +152,29 @@ else
     exit 1
 fi
 
-
 # ==============================================================================
 # === 3. СМЕНА СИСТЕМНОЙ ОБОЛОЧКИ ПО УМОЛЧАНИЮ НА ZSH                        ===
 # ==============================================================================
 
-# Вычисляем целевой путь к Zsh и текущий shell пользователя в зависимости от ОС
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    ZSH_PATH="$(brew --prefix)/bin/zsh"
-    CURRENT_SYSTEM_SHELL=$(dscl . -read "/Users/$USER" UserShell 2>/dev/null | awk '{print $2}')
-else
-    ZSH_PATH=$(which zsh 2>/dev/null)
-    CURRENT_SYSTEM_SHELL=$(getent passwd "$USER" | cut -d: -f7)
-fi
-
-# Если текущий шелл отличается от установленного Zsh, производим смену
-if [ "$CURRENT_SYSTEM_SHELL" != "$ZSH_PATH" ]; then
-    echo "Changing default shell from $CURRENT_SYSTEM_SHELL to $ZSH_PATH..."
-
-    set +e # Временно отключаем прерывание, чтобы корректно обработать возможный сбой chsh
-
-    # Для macOS: если бинарник Zsh от Homebrew отсутствует в списке доверенных оболочек, добавляем его туда
-    if [[ "$OSTYPE" == "darwin"* ]] && ! grep -q "$ZSH_PATH" /etc/shells; then
-        echo "Adding $ZSH_PATH to /etc/shells trusted list (requires sudo)..."
-        echo "$ZSH_PATH" | sudo tee -a /etc/shells >/dev/null
-    fi
-
-    # Меняем шелл по умолчанию для текущего пользователя
-    sudo chsh -s "$ZSH_PATH" "$USER"
-
-    if [ $? -eq 0 ]; then
-        echo "🎉 Shell successfully changed to $ZSH_PATH!"
-    else
-        echo "⚠️ Warning: Shell change failed. You can do it manually later."
-    fi
-
-    set -e # Возвращаем строгий режим ошибок
-else
-    echo "Zsh ($ZSH_PATH) is already configured as your default system shell. Skipping."
-fi
-
+"$ANOBI_PATH/install/changeshell"
 
 # ==============================================================================
 # === 4. УСТАНОВКА И ОБНОВЛЕНИЕ ПЛАГИНОВ ДЛЯ ZSH                             ===
 # ==============================================================================
 
-ZSH_PLUGINS="$HOME/.zsh/plugins"
-mkdir -p "$ZSH_PLUGINS"
-
-# Функция для клонирования или восстановления плагинов с GitHub
-install_or_update_plugin() {
-    local plugin_name=$1
-    local plugin_url="${URL_ZSH_PLUGINS_BASE}$1.git"
-    local target_dir="$ZSH_PLUGINS/$plugin_name"
-
-    if [ ! -d "$target_dir" ]; then
-        echo "Installing plugin: $plugin_name..."
-        git clone "$plugin_url" "$target_dir"
-    else
-        echo "Plugin $plugin_name is already installed. Updating..."
-        (cd "$target_dir" && git pull)
-    fi
-}
-
-# Скачиваем/обновляем плагины автодополнения и подсветки синтаксиса
-install_or_update_plugin "zsh-autosuggestions"
-install_or_update_plugin "zsh-syntax-highlighting"
-
-echo "🎉 zsh plugins successfully prepared!"
-
+"$ANOBI_PATH/install/zshplugins" "$URL_ZSH_PLUGINS_BASE"
 
 # ==============================================================================
 # === 5. РАЗВЕРТЫВАНИЕ КОНФИГУРАЦИОННЫХ ФАЙЛОВ И ТВИКИ                       ===
 # ==============================================================================
 echo "Deploying configurations..."
 
-# Конфигурация Vim: копируем .vimrc текущему пользователю и в домашнюю директорию root
-VIMRC_SOURCE="$ANOBI_PATH/.vimrc"
-if [ -f "$VIMRC_SOURCE" ]; then
-    cp "$VIMRC_SOURCE" "$HOME"
-    set +e
-    # Копирование в root-директорию с флагом -H для гарантированного раскрытия $HOME как /var/root
-    sudo -H sh -c "cp '$VIMRC_SOURCE' \$HOME"
-    set -e
-else
-    echo "No .vimrc found in repo, skipping."
-fi
+"$ANOBI_PATH/install/vimrc"
 
 # Создаем файл .zshrc, если он отсутствует в системе
 ZSHRC_FILE="$HOME/.zshrc"
 if [ ! -f "$ZSHRC_FILE" ]; then
-    touch $ZSHRC_FILE
+    touch "$ZSHRC_FILE"
 fi
 
 # Настройка инициализации окружения Anobisoft в .zshrc
@@ -322,33 +186,14 @@ else
     {
         echo
         echo "# Anobisoft"
-        echo "[ -d '$ANOBI_PATH/run' ] && path+=(\"$ANOBI_PATH/run\")"
         echo "source $ANOBI_PATH/.anobirc"
     } >>"$ZSHRC_FILE"
 fi
-
-# Для macOS: прописываем приоритет путей GNU-утилит в массиве path для Zsh
-if [ ${#GNU_PATHS_ARR[@]} -gt 0 ]; then
-    # Если блок путей уже существовал, комментируем старую версию (и комментарий, и саму строку path)
-    if grep -q "# Core GNU Toolchain paths for macOS" "$ZSHRC_FILE"; then
-        # Находим строку комментария и идущую за ней строку, после чего добавляем '#' в начало каждой
-        sed -i.bak '/^[[:space:]]*# Core GNU Toolchain paths for macOS/{N;s/^/#/;s/\n/\n#/;}' "$ZSHRC_FILE"
-    fi
-
-    # Записываем новый блок с актуальным набором путей и свежим хэшем ревизии
-    {
-        echo
-        echo "# Core GNU Toolchain paths for macOS (rev: $ANOBI_REV)"
-        echo "path=(${GNU_PATHS_ARR[*]} \$path)"
-    } >>"$ZSHRC_FILE"
-fi
-
 
 # ==============================================================================
 # === 6. НАСТРОЙКА ГЛОБАЛЬНЫХ ПАРАМЕТРОВ GIT                                 ===
 # ==============================================================================
 
-echo "Tuning global Git configuration..."
 # Вызов внешнего скрипта/функции тонкой настройки конфигурации Git
 "$ANOBI_PATH/once/config_git"
 

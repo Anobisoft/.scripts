@@ -1,0 +1,41 @@
+#!/bin/bash
+# ==============================================================================
+# === Anobisoft Environment: Linux Fonts Standalone Installer                ===
+# ==============================================================================
+
+# Разрешаем экстренное завершение скрипта при ошибках
+set -e
+
+# --- 1. Проверка окружения и необходимости установки ---
+# Пропускаем установку, если текущая сессия запущена удаленно через SSH
+if [ -n "$SSH_CONNECTION" ]; then
+    exit 0
+fi
+
+FONT_DIR="$HOME/.local/share/fonts/JetBrainsMono"
+
+# Если папка со шрифтом уже существует, завершаем работу модуля без ошибок
+if [ -d "$FONT_DIR" ]; then
+    exit 0
+fi
+
+# Динамически берем URL архива из первого аргумента, либо используем адрес по умолчанию
+readonly URL_FONT_JETBRAINS="${1:-'https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.tar.xz'}"
+
+echo "Installing JetBrainsMono Nerd Font for Linux..."
+mkdir -p "$FONT_DIR"
+
+# --- 2. Скачивание и распаковка ресурсов ---
+# Скачиваем официальный легковесный tar.xz архив последней версии шрифта
+curl -fsSL "$URL_FONT_JETBRAINS" -o "/tmp/JetBrainsMono.tar.xz"
+
+# Распаковываем его в локальную папку шрифтов пользователя
+tar -xf "/tmp/JetBrainsMono.tar.xz" -C "$FONT_DIR"
+rm -f "/tmp/JetBrainsMono.tar.xz"
+
+# --- 3. Обновление системных кэшей ---
+# Обновляем кэш шрифтов в Linux, чтобы графическая оболочка его сразу увидела
+if command -v fc-cache &>/dev/null; then
+    echo "Rebuilding font cache..."
+    fc-cache -fv
+fi
