@@ -1,29 +1,84 @@
 #!/bin/bash
+# shellcheck disable=SC2016
 # Автоматический скрипт настройки окружения Anobisoft
 # Поддерживаемые ОС: macOS (с Homebrew) и Linux (Debian/Ubuntu, Fedora, Arch)
 
-# Экстренное завершение работы скрипта, если любая из команд вернет ошибку (non-zero status)
+# Экстренное завершение работы скрипта, если любая из команд вернет ошибку
 set -e
+
+# --- Глобальные константы репозитория ---
+readonly ORIG_ARG1="$1"
+readonly REPO_URL_DEFAULT="https://github.com/Anobisoft/.scripts.git"
+readonly URL_HOMEBREW="https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh"
+readonly URL_FONT_JETBRAINS="https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.tar.xz"
+readonly URL_ZSH_PLUGINS_BASE="https://github.com/zsh-users/"
+
+
+# --- Инициализация переменных по умолчанию ---
+DEBUG_MODE=false
+ANOBI_PATH=""
+
+# --- Разбор аргументов командной строки ---
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --debug)
+            DEBUG_MODE=true
+            shift
+            ;;
+        -*)
+            echo "⚠️ Error: Unknown option $1" >&2
+            exit 1
+            ;;
+        *)
+            if [ -z "$ANOBI_PATH" ]; then
+                ANOBI_PATH="$1"
+            else
+                echo "⚠️ Error: Multiple installation paths specified" >&2
+                exit 1
+            fi
+            shift
+            ;;
+    esac
+done
+
+# Функция для вывода структурированных отладочных логов
+debuglog() {
+    if [ "$DEBUG" = true ]; then
+        echo "🔧 [DEBUG] $1 $2"
+    fi
+}
+
+# Если включен флаг --debug, активируем подробное логирование команд Bash (X-ray)
+if [ "$DEBUG_MODE" = true ]; then
+    export DEBUG=true  # Пробрасываем переменную дальше для вложенных скриптов
+    set -x
+fi
+
+debuglog "Extended debugging mode activated (set -x)."
+debuglog '$0 (Script Executable) :' "$0"
+debuglog '$1 (First Argument)    :' "${ORIG_ARG1:-[Not Specified]}"
+debuglog 'REPO_URL_DEFAULT       :' "$REPO_URL_DEFAULT"
+debuglog 'ANOBI_PATH (params)    :' "$ANOBI_PATH"
+
+# Если путь не был передан аргументом, устанавливаем дефолтное значение
+if [ -z "$ANOBI_PATH" ]; then
+    ANOBI_PATH="$HOME/.scripts"
+    debuglog "ANOBI_PATH (default)   : $ANOBI_PATH"
+fi
 
 
 # ==============================================================================
 # === 1. КЛОНИРОВАНИЕ ИЛИ ОБНОВЛЕНИЕ РЕПОЗИТОРИЯ СКРИПТОВ                    ===
 # ==============================================================================
 
-# Задаем путь установки: берем из первого аргумента скрипта $1, либо по умолчанию $HOME/.scripts
-ANOBI_PATH="${1:-$HOME/.scripts}"
-
 while true; do
-    # Если директория уже существует, проверяем, является ли она целевым репозиторием
     if [ -d "$ANOBI_PATH" ]; then
         REPO_URL=$(cd "$ANOBI_PATH" && git remote get-url origin 2>/dev/null || echo "")
-        
-        # Валидация репозитория по названию организации/пользователя Anobisoft
+
         if [[ "$REPO_URL" == *Anobisoft* ]]; then
             echo "Valid Anobisoft repository detected at '$ANOBI_PATH'. Updating..."
             (
                 cd "$ANOBI_PATH"
-                # Если обнаружены локальные незакоммиченные изменения, временно прячем их в stash
                 if [ -n "$(git status --porcelain)" ]; then
                     echo "📦 Local changes detected! Running 'git stash' to save your work temporarily..."
                     git stash
@@ -33,7 +88,6 @@ while true; do
                 git checkout main 2>/dev/null || git checkout master
                 echo "📥 Pulling latest updates from GitHub..."
                 git pull
-                # Возвращаем локальные изменения из stash, если они сохранялись
                 if [ "$HAS_STASH" = true ]; then
                     echo "🎁 Restoring your saved local changes via 'git stash pop'..."
                     git stash pop || echo "⚠️ Warning: Could not restore stash automatically."
@@ -41,11 +95,9 @@ while true; do
             )
             break
         else
-            # Обработка ситуации, когда папка занята сторонними файлами или чужим репозиторием
             echo "⚠️ Error: Directory '$ANOBI_PATH' exists but is NOT an Anobisoft repository!"
             echo "Please enter another path:"
             read -r MANUAL_PATH
-            # Если введен относительный путь, преобразуем его в абсолютный относительно $HOME
             if [[ "$MANUAL_PATH" != /* ]]; then
                 ANOBI_PATH="$HOME/$MANUAL_PATH"
             else
@@ -53,15 +105,15 @@ while true; do
             fi
         fi
     else
-        # Если папка отсутствует, выполняем чистое клонирование репозитория
         echo "Cloning Anobisoft scripts repository into $ANOBI_PATH..."
-        git clone https://github.com "$ANOBI_PATH"
+        git clone "$REPO_URL_DEFAULT" "$ANOBI_PATH"
         break
     fi
 done
 
 # Получаем короткий хэш текущего коммита HEAD из репозитория скриптов
 ANOBI_REV=$(cd "$ANOBI_PATH" && git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+debuglog 'ANOBI_REV (hash)       :' "$ANOBI_PATH"
 
 
 # ==============================================================================
@@ -71,16 +123,16 @@ echo "=== Checking OS and provisions ==="
 
 if [[ "$OSTYPE" == "darwin"* ]]; then
     # --- Конфигурация для macOS ---
-    
+
     # Запуск специфичных для macOS начальных твиков системы
-    $ANOBI_PATH/once/config_macOS
-    
+    "$ANOBI_PATH/once/config_macOS"
+
     # Автоматическая интерактивная установка пакетного менеджера Homebrew
     if ! command -v brew &>/dev/null; then
         echo "Homebrew is required but not found. Starting interactive installation..."
         set +e # Временно отключаем 'set -e', так как скрипт Homebrew может завершиться с ошибкой
-        /bin/bash -c "$(curl -fsSL https://githubusercontent.com)"
-        
+        /bin/bash -c "$(curl -fsSL ${URL_HOMEBREW})"
+
         # Инициализация окружения Homebrew в текущей сессии установщика (поддержка Apple Silicon и Intel)
         if [ -f /opt/homebrew/bin/brew ]; then
             eval "$(/opt/homebrew/bin/brew shellenv)"
@@ -88,7 +140,7 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
             eval "$(/usr/local/bin/brew shellenv)"
         fi
         set -e # Возвращаем строгий режим обработки ошибок
-        
+
         if ! command -v brew &>/dev/null; then
             echo "Error: Homebrew installation failed." >&2
             exit 1
@@ -109,7 +161,7 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
         PKG_PATH=
         if [ -d "$BREW_PREFIX/opt/$pkg/libexec/gnubin" ]; then
             PKG_PATH="$BREW_PREFIX/opt/$pkg/libexec/gnubin"
-            
+
         elif [ -d "$BREW_PREFIX/opt/$pkg/bin" ]; then
             PKG_PATH="$BREW_PREFIX/opt/$pkg/bin"
         fi
@@ -126,7 +178,7 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
 
 elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
     # --- Конфигурация для Linux (Ubuntu / Debian / Fedora / Arch) ---
-    
+
     # Установка шрифта JetBrainsMono Nerd Font (только для локальных GUI-сессий, пропускается для SSH)
     FONT_DIR="$HOME/.local/share/fonts/JetBrainsMono"
     if [ -z "$SSH_CONNECTION" ] && [ ! -d "$FONT_DIR" ]; then
@@ -134,7 +186,7 @@ elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
         mkdir -p "$FONT_DIR"
 
         # Скачиваем официальный легковесный tar.xz архив последней версии шрифта
-        curl -fsSL "https://github.com" -o "/tmp/JetBrainsMono.tar.xz"
+        curl -fsSL "$URL_FONT_JETBRAINS" -o "/tmp/JetBrainsMono.tar.xz"
 
         # Распаковываем его в локальную папку шрифтов пользователя
         tar -xf "/tmp/JetBrainsMono.tar.xz" -C "$FONT_DIR"
@@ -219,7 +271,7 @@ mkdir -p "$ZSH_PLUGINS"
 # Функция для клонирования или восстановления плагинов с GitHub
 install_or_update_plugin() {
     local plugin_name=$1
-    local plugin_url="https://github.com"
+    local plugin_url="${URL_ZSH_PLUGINS_BASE}$1.git"
     local target_dir="$ZSH_PLUGINS/$plugin_name"
 
     if [ ! -d "$target_dir" ]; then
@@ -298,7 +350,7 @@ fi
 
 echo "Tuning global Git configuration..."
 # Вызов внешнего скрипта/функции тонкой настройки конфигурации Git
-$ANOBI_PATH/once/config_git
+"$ANOBI_PATH/once/config_git"
 
 # Финальное сообщение об успешном завершении развертывания среды
 echo "🎉 [SUCCESS] Anobisoft environment installation is fully complete!"
