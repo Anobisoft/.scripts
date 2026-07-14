@@ -2,7 +2,7 @@
 
 ![Shell](https://img.shields.io/badge/shell-zsh%20%7C%20bash-4acc13?style=flat-square&logo=gnu-bash&logoColor=white)
 ![OS Compatible](https://img.shields.io/badge/os-macOS%20%7C%20Linux-000000?style=flat-square&logo=apple&logoColor=white)
-![Font](https://img.shields.io/badge/font-JetBrains%20Mono%20NF-blueviolet?style=flat-square)
+![GitHub release (latest by date)](img.shields.io/github/v/release/Anobisoft/.scripts?style=flat-square&color=blue)
 ![License](https://img.shields.io/badge/license-MIT-orange?style=flat-square)
 
 An automated environment provisioning and synchronization system built on top of **Zsh** and **GNU** core utilities. Fully compatible with **macOS** and major **Linux** distributions (Debian/Ubuntu, Fedora, Arch).

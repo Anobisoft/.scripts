@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # ==============================================================================
 # === Anobisoft Terminal Aliases & Shortcuts                                ===
 # ==============================================================================
@@ -29,6 +30,6 @@ alias xclear_cache='rm -rf ~/Library/Caches/com.apple.dt.Xcode'
 alias xclear='xclear_deriveddata && xclear_cache && xclear_clang_cache'
 
 # Жесткое завершение всех зависших процессов Xcode и его симуляторов.
-# Написано через ручной сбор PID-ов на случай, если не сработал pkill -9 -i -f "xcode" 
+# Написано через ручной сбор PID-ов на случай, если не сработал pkill -9 -i -f "xcode"
 # (помогает выковыривать и прибивать «зомби-процессы», блокирующие перезапуск Xcode).
 alias killxcode='ps ax | grep -i xcode | grep -v grep | awk "{ print \$1; }" | tr "\n" " " | xargs kill -9'
