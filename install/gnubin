@@ -19,11 +19,11 @@ brew update
 
 # Установка утилит GNU и актуальной версии Zsh
 # Переменная "$BREW_FLAGS" обернута в кавычки для предотвращения word splitting и прохождения ShellCheck
-brew "$BREW_FLAGS" install zsh gawk diffutils wget coreutils findutils grep gnu-sed binutils curl
+brew install "$BREW_FLAGS" zsh gawk diffutils wget coreutils findutils grep gnu-sed binutils curl
 BREW_PREFIX=$(brew --prefix)
 
 # Установка JetBrains Mono Nerd Font через Cask-репозиторий Homebrew
-brew "$BREW_FLAGS" install --cask font-jetbrains-mono-nerd-font
+brew install "$BREW_FLAGS" --cask font-jetbrains-mono-nerd-font
 
 # --- 1. Динамическая генерация путей (PATH) ---
 # Формируем список директорий для активации GNU-утилит БЕЗ дефолтного префикса 'g'
