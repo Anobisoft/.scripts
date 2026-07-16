@@ -25,7 +25,7 @@ typeset -U path PATH
 source "$_ANOBI_CORE/.prompt"
 
 # Загрузка кастомных системных алиасов и сокращений
-source "$_ANOBI_CORE/.alias"
+source "$_ANOBI_CORE/.aliases"
 
 # Загрузка заготовок HTTP-заголовков и шаблонов таймингов для утилиты cURL
 source "$_ANOBI_CORE/.curl_templates"
